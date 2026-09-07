@@ -18,13 +18,14 @@ $page_refresh = 60;
 //	  tcp://<ip_or_name>:<port> in case of ...
 $vpns = array (
   array (
-    'name' => 'my server',
+    'name' => 'server1',
     'url' => 'unix:///var/run/openvpn/...',
 #		'pw' => 's3cret',
 	),
 #  array (
-#	  'name' => 'fra1-udp',
-#	  'url' => 'unix:///var/run/openvpn/server-udp.sock',
+#	  'name' => 'server2',
+#	  'url' => 'tcp://fqdn.or.ip:port',
+#	  'pw' => 'also_s3cret',
 #  ),
 );
 // -----------------------------
@@ -46,15 +47,32 @@ $tdalign = array('left', 'left', 'left', 'left', 'left', 'right', 'right', 'left
 $i = 0;
 foreach ($vpns as $vpn) {
 	$vpnmgmt_url = $vpn['url'];
+#	print $vpn['name']." ".$vpnmgmt_url.PHP_EOL;
 	$fp = stream_socket_client($vpnmgmt_url, $errno, $errstr, 30);
-
 	if (!$fp) {
-		echo "$errstr ($errno)<br />\n";
-		exit;
+#		echo "$errstr ($errno)<br />\n";
+#		exit;
+		$errstr= "access to \"".$vpnmgmt_url."\" of server \"".$vpns[$i]['name']."\" failed (".$errstr.")";
+		break;
 	}
-	if (isset($vpns[$i]['pw'])) {
-		fwrite($fp, $vpns[$i]['pw']."\r\n");
+
+	$line = fgets($fp, 16);
+	if (substr($line, 0, 15) == "ENTER PASSWORD:") {
+		if (isset($vpns[$i]['pw'])) {
+			fwrite($fp, $vpns[$i]['pw']."\r\n");
+		}
+		else {
+			$errstr= "access to \"".$vpnmgmt_url."\" of server \"".$vpns[$i]['name']."\" requires a password";
+			break;
+		}
+		$line = fgets($fp, 9);
+		if (substr($line, 0, 8) != "SUCCESS:") {
+			$errstr= "access to \"".$vpnmgmt_url."\" of server \"".$vpns[$i]['name']."\" failed: pw incorrect";
+#			print $errstr.PHP_EOL;
+			break;
+		}
 	}
+
 	sleep(1);
 	fwrite($fp, "status\r\n");
 	sleep(1);
@@ -90,37 +108,58 @@ foreach ($vpns as $vpn) {
 			$vpns[$i]['clients'][$j]= $client;
 			$j++;
 		}
+		if (substr($line, 0, 3) == "END") {
+			break;
+		}
 	}
 
 /* DEBUG
 print "<pre>";
 print_r($client);
 print_r($vpns);
-print "</pre>";
+print "</pre>".PHP_EOL;
 */
 	fclose($fp);
 	$i++;
 }
+
+if ($errstr !== "") {
+	print <<<EOF
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>$page_title status - error</title>
+	</head>
+	<body>
+	<pre>
+	$errstr
+	</pre>
+	</body>
+	</html>
+	EOF;
+	exit;
+}
 ?> 
 
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title><?php echo $page_title ?> status</title>
-
-<meta http-equiv='refresh' content='<?php echo $page_refresh ?>' />
+<meta http-equiv="refresh" content="<?php echo $page_refresh ?>" />
 
 <style type="text/css">
 body {
 	font-family: Verdana, Arial, Helvetica, sans-serif;
-	font-size: 14px;
+	font-size: 0.9em;
 	background-color: #E5EAF0;
 }
 h1 {
 	color: green;
-	font-size: 24px;
+	font-size: 1.2em;
 	text-align: center;
 	padding-bottom: 0;
 	margin-bottom: 0;
@@ -128,11 +167,11 @@ h1 {
 table caption {
 	background: maroon;
 	color: white;
-#	font-size: 14px;
+	font-size: 1.1em;
 }
 p.info {
 	text-align: center;
-	font-size: 12px;
+	font-size: 0.7em;
 }
 table, th, td {
 	border: 1px solid maroon;
@@ -156,7 +195,6 @@ td {
 	padding: 0px 10px 0px 10px;
 }
 </style>
-
 </head>
 
 <body>
@@ -179,14 +217,14 @@ td {
 ?>
 <tr>
 <?php foreach ($client as $td) { ?>
-<td align='<?php echo $tdalign[$i++] ?>'><?php echo $td?></td>
+<td align="<?php echo $tdalign[$i++] ?>"><?php echo $td?></td>
 <?php } ?>
 </tr>
 <?php } ?>
 
 </table>
 <?php } ?>
-<p class='info'>This page gets reloaded every <?php echo $page_refresh ?>seconds.<br />Last update: 
+<p class="info">This page gets reloaded every <?php echo $page_refresh ?>seconds.<br />Last update: 
 <b><?php echo date ("Y-m-d H:i:s T") ?></b></p>
 </body>
 
